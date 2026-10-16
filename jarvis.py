@@ -1,19 +1,31 @@
 import datetime
 import os
+import sys
 import webbrowser
 import pyttsx3
 import speech_recognition as sr
 
-# Initialize Text-to-Speech Engine
-engine = pyttsx3.init('sapi5')
-voices = engine.getProperty('voices')
-engine.setProperty('voice', voices[0].id)
+# Fix standard output streams when running --noconsole mode
+if sys.stdout is None:
+  sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+  sys.stderr = open(os.devnull, 'w')
 
 
 def speak(text):
   print(f'JARVIS: {text}')
-  engine.say(text)
-  engine.runAndWait()
+  try:
+    # Re-initialize engine locally inside speak to prevent Windows engine lock
+    engine = pyttsx3.init('sapi5')
+    engine.setProperty('rate', 170)  # Moderate speaking rate
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[0].id)
+
+    engine.say(text)
+    engine.runAndWait()
+    engine.stop()
+  except Exception as e:
+    print(f'Speech Error: {e}')
 
 
 def wish_user():
@@ -29,19 +41,29 @@ def wish_user():
 
 def take_command():
   r = sr.Recognizer()
+  # Adjust recognition sensitivity
+  r.energy_threshold = 300
+  r.dynamic_energy_threshold = True
+
   with sr.Microphone() as source:
     print('Listening...')
     r.pause_threshold = 1
     r.adjust_for_ambient_noise(source, duration=1)
-    audio = r.listen(source)
+    try:
+      audio = r.listen(source, timeout=5, phrase_time_limit=8)
+    except sr.WaitTimeoutError:
+      return 'none'
 
   try:
     print('Recognizing...')
     query = r.recognize_google(audio, language='en-US')
     print(f'User said: {query}\n')
+  except sr.UnknownValueError:
+    return 'none'
   except Exception as e:
-    print('Say that again please...')
-    return 'None'
+    print(f'Error recognizing speech: {e}')
+    return 'none'
+
   return query.lower()
 
 
@@ -50,6 +72,9 @@ if __name__ == '__main__':
 
   while True:
     query = take_command()
+
+    if query == 'none':
+      continue
 
     if 'open google' in query:
       speak('Opening Google, Sir.')
